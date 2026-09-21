@@ -18,14 +18,35 @@ CREATE TABLE IF NOT EXISTS public.users (
   nama TEXT NOT NULL,
   username TEXT NOT NULL UNIQUE,
   password_hash TEXT NOT NULL,
-  role TEXT NOT NULL CHECK (role IN ('MUSYRIF', 'KOORDINATOR', 'KASIE_KEPESANTRENAN')),
-  unit TEXT NOT NULL CHECK (unit IN ('SMP', 'MA', 'SMA', 'ALL')),
+  password TEXT,
+  role TEXT NOT NULL DEFAULT 'MUSYRIF' CHECK (role IN ('MUSYRIF', 'KOORDINATOR', 'KASIE_KEPESANTRENAN')),
+  jabatan TEXT,
+  unit TEXT NOT NULL DEFAULT 'SMP' CHECK (unit IN ('SMP', 'MA', 'SMA', 'ALL')),
   is_active BOOLEAN NOT NULL DEFAULT TRUE,
   email TEXT,
   title TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- Kolom kompatibilitas dua arah jika tabel users sudah ada sebelumnya
+DO $$ 
+BEGIN 
+  IF EXISTS (SELECT FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'users') THEN
+    IF NOT EXISTS (SELECT FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'users' AND column_name = 'password') THEN
+      ALTER TABLE public.users ADD COLUMN password TEXT;
+    END IF;
+    IF NOT EXISTS (SELECT FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'users' AND column_name = 'password_hash') THEN
+      ALTER TABLE public.users ADD COLUMN password_hash TEXT;
+    END IF;
+    IF NOT EXISTS (SELECT FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'users' AND column_name = 'jabatan') THEN
+      ALTER TABLE public.users ADD COLUMN jabatan TEXT;
+    END IF;
+    IF NOT EXISTS (SELECT FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'users' AND column_name = 'role') THEN
+      ALTER TABLE public.users ADD COLUMN role TEXT DEFAULT 'MUSYRIF';
+    END IF;
+  END IF;
+END $$;
 
 CREATE INDEX IF NOT EXISTS idx_users_username ON public.users(username);
 CREATE INDEX IF NOT EXISTS idx_users_unit_role ON public.users(unit, role);

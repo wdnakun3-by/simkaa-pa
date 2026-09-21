@@ -26,7 +26,8 @@ import {
   Layers,
   FileDown,
   AlertOctagon,
-  AlertTriangle
+  AlertTriangle,
+  RotateCcw
 } from 'lucide-react';
 
 type CategoryFilter = 'All' | PelanggaranKategori;
@@ -85,6 +86,11 @@ export const DataPelanggaranView: React.FC = () => {
     });
     return sortMasterPelanggaranList(filtered);
   }, [pelanggaranList, searchQuery, selectedCategory]);
+
+  const handleResetFilter = () => {
+    setSearchQuery('');
+    setSelectedCategory('All');
+  };
 
   const handleDownloadTemplate = () => {
     if (!isKasie) {
@@ -268,6 +274,18 @@ export const DataPelanggaranView: React.FC = () => {
               </button>
             );
           })}
+
+          {(searchQuery !== '' || selectedCategory !== 'All') && (
+            <button
+              id="btn-reset-filter-pelanggaran"
+              onClick={handleResetFilter}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-rose-50 dark:bg-rose-950/30 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800 hover:bg-rose-100 transition-all cursor-pointer whitespace-nowrap"
+              title="Kembalikan semua filter ke kondisi awal"
+            >
+              <RotateCcw className="w-3 h-3" />
+              <span>Reset Filter</span>
+            </button>
+          )}
         </div>
       </div>
 

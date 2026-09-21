@@ -32,7 +32,17 @@ const AppContent: React.FC = () => {
 
   // If not logged in, show the simple username/password Login screen
   if (!isAuthenticated || !user) {
-    return <LoginView />;
+    return (
+      <>
+        <LoginView />
+        <DatabaseSettingsModal 
+          isOpen={isDatabaseModalOpen} 
+          onClose={closeDatabaseModal} 
+          onConfigUpdated={refreshData} 
+        />
+        <ToastContainer />
+      </>
+    );
   }
 
   const renderActiveView = () => {

@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
-import { Lock, User, AlertCircle, ArrowRight, Eye, EyeOff, ShieldCheck } from 'lucide-react';
+import { Lock, User, AlertCircle, ArrowRight, Eye, EyeOff, ShieldCheck, Database } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { MosqueLogo } from '../common/MosqueLogo';
 
 export const LoginView: React.FC = () => {
-  const { login } = useApp();
+  const { login, openDatabaseModal } = useApp();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [rememberMe, setRememberMe] = useState(true);
@@ -196,6 +196,19 @@ export const LoginView: React.FC = () => {
               )}
             </button>
           </form>
+
+          {/* Database Setup Quick Access */}
+          <div className="mt-4 pt-3.5 border-t border-[#16352C] flex items-center justify-center">
+            <button
+              type="button"
+              onClick={openDatabaseModal}
+              className="inline-flex items-center gap-1.5 text-xs text-emerald-400/80 hover:text-emerald-300 transition-colors py-1 px-2.5 rounded-lg hover:bg-emerald-950/40 cursor-pointer"
+              title="Buka Pengaturan & Skrip SQL Supabase"
+            >
+              <Database className="w-3.5 h-3.5 text-emerald-400" />
+              <span>Pengaturan &amp; Skrip Database Supabase</span>
+            </button>
+          </div>
         </main>
 
       </div>

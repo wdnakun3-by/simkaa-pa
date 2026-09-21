@@ -117,13 +117,37 @@ export function isSupabaseConfigured(): boolean {
   return Boolean(cfg.url && cfg.anonKey && !cfg.offlineMode);
 }
 
+export function isTableNotFoundError(error: any): boolean {
+  if (!error) return false;
+  const code = error?.code || '';
+  const msg = typeof error === 'string' 
+    ? error 
+    : (error.message || error.details || error.hint || '');
+  return (
+    code === 'PGRST205' ||
+    msg.includes('PGRST205') ||
+    msg.includes('schema cache') ||
+    msg.includes('Could not find the table') ||
+    (msg.includes('relation') && (msg.includes('does not exist') || msg.includes('tidak ditemukan')))
+  );
+}
+
 export function translateSupabaseError(error: any): string {
   if (!error) return 'Terjadi kesalahan sistem yang tidak diketahui.';
-  console.error('[SIMKA.ID DB Error Details]:', error);
 
+  const code = error?.code || '';
   const msg = typeof error === 'string' 
     ? error 
     : error.message || error.error_description || error.details || error.hint || JSON.stringify(error);
+
+  if (isTableNotFoundError(error)) {
+    console.warn('[SIMKA.ID DB Setup Notice]:', msg);
+    const tableMatch = msg.match(/table 'public\.([^']+)'/i) || msg.match(/relation "public\.([^"]+)"/i);
+    const tableName = tableMatch ? ` '${tableMatch[1]}'` : '';
+    return `Tabel database Supabase${tableName} belum dibuat di proyek Anda. Silakan buka Supabase Dashboard > SQL Editor, salin dan jalankan skrip SQL skema lengkap dari menu Pengaturan Database di SIMKA.ID.`;
+  }
+
+  console.error('[SIMKA.ID DB Error Details]:', error);
 
   if (
     msg.includes('Invalid API key') || 
@@ -134,9 +158,6 @@ export function translateSupabaseError(error: any): string {
     msg.includes('401')
   ) {
     return 'Kunci Anon API Supabase tidak valid (Invalid Supabase Anon Key). Pastikan menyalin "anon public" key dari Supabase Dashboard (Project Settings > API) ke Vercel Environment Variables (VITE_SUPABASE_ANON_KEY) atau di menu Database SIMKA.ID. (Catatan: SIMKA.ID menggunakan Supabase, bukan Gemini API).';
-  }
-  if (msg.includes('relation') && (msg.includes('does not exist') || msg.includes('tidak ditemukan'))) {
-    return 'Tabel database di Supabase belum dibuat. Silakan buka Supabase Dashboard > SQL Editor, salin dan jalankan skrip SQL skema lengkap dari menu Database di SIMKA.ID.';
   }
   if (msg.includes('row-level security') || msg.includes('RLS') || msg.includes('policy') || msg.includes('permission denied')) {
     return 'Akses database dibatasi oleh kebijakan RLS Supabase. Pastikan Policy "Public Anon Access" sudah diaktifkan di Supabase SQL Editor.';
@@ -164,12 +185,14 @@ export async function testSupabaseConnection(customUrl?: string, customKey?: str
   const url = (customUrl ?? config.url).trim();
   const key = (customKey ?? config.anonKey).trim();
 
+  const requiredTables = ['users', 'santri', 'master_pelanggaran', 'pelanggaran', 'master_pembinaan', 'pembinaan'];
+
   if (!url || !key) {
     return {
       success: false,
       message: 'URL Proyek Supabase atau Kunci Anon API belum diisi.',
       tablesFound: [],
-      missingTables: ['users', 'santri', 'master_pelanggaran', 'pelanggaran', 'master_pembinaan', 'pembinaan']
+      missingTables: requiredTables
     };
   }
 
@@ -185,57 +208,85 @@ export async function testSupabaseConnection(customUrl?: string, customKey?: str
   const startTime = Date.now();
   try {
     const testClient = createClient(url, key);
-    const requiredTables = ['users', 'santri', 'master_pelanggaran', 'pelanggaran', 'master_pembinaan', 'pembinaan'];
-    const tablesFound: string[] = [];
-    const missingTables: string[] = [];
 
-    // Test a basic select on users
-    const { data: usersData, error: usersError } = await testClient.from('users').select('id').limit(1);
+    // Test connectivity to each table in parallel
+    const checks = await Promise.all(
+      requiredTables.map(async (tbl) => {
+        try {
+          const { data, error } = await testClient.from(tbl).select('id').limit(1);
+          return { tbl, error };
+        } catch (e: any) {
+          return { tbl, error: e };
+        }
+      })
+    );
 
-    if (usersError) {
-      if (usersError.message.includes('Invalid API key') || usersError.message.includes('apikey') || usersError.message.includes('JWT') || usersError.message.includes('unauthorized')) {
-        return {
-          success: false,
-          message: 'Kunci Anon API tidak valid (Invalid API key). Pastikan menyalin "anon public" key dari menu Project Settings > API di Supabase.',
-          tablesFound: [],
-          missingTables: requiredTables
-        };
-      }
-      if (usersError.message.includes('relation') && usersError.message.includes('does not exist')) {
-        return {
-          success: false,
-          message: 'Koneksi ke Supabase BERHASIL, tetapi tabel belum dibuat! Silakan salin skrip SQL kami dan jalankan di Supabase SQL Editor.',
-          tablesFound: [],
-          missingTables: requiredTables
-        };
-      }
+    // 1. Check for API Key Authentication rejection
+    const authError = checks.find(
+      (c) =>
+        c.error &&
+        (c.error.message?.includes('Invalid API key') ||
+          c.error.message?.includes('invalid api key') ||
+          c.error.message?.includes('apikey') ||
+          c.error.message?.includes('JWT') ||
+          c.error.message?.includes('unauthorized') ||
+          c.error.code === '401')
+    );
+    if (authError) {
       return {
         success: false,
-        message: `Koneksi gagal: ${translateSupabaseError(usersError)}`,
+        message: 'Kunci Anon API tidak valid (Invalid API key). Pastikan menyalin "anon public" key dari menu Project Settings > API di Supabase.',
         tablesFound: [],
         missingTables: requiredTables
       };
     }
 
-    tablesFound.push('users');
-
-    await Promise.all(
-      ['santri', 'master_pelanggaran', 'pelanggaran', 'master_pembinaan', 'pembinaan'].map(async (tbl) => {
-        const { error } = await testClient.from(tbl).select('id').limit(1);
-        if (!error) {
-          tablesFound.push(tbl);
-        } else {
-          missingTables.push(tbl);
-        }
-      })
+    // 2. Check for network host unreachable
+    const netError = checks.find(
+      (c) =>
+        c.error &&
+        (c.error.message?.includes('Failed to fetch') ||
+          c.error.message?.includes('NetworkError') ||
+          c.error.message?.includes('fetch failed'))
     );
+    if (netError) {
+      return {
+        success: false,
+        message: 'Gagal terhubung ke URL Supabase. Periksa format URL dan koneksi internet Anda.',
+        tablesFound: [],
+        missingTables: requiredTables
+      };
+    }
 
     const latencyMs = Date.now() - startTime;
+    const tablesFound: string[] = [];
+    const missingTables: string[] = [];
+
+    for (const { tbl, error } of checks) {
+      if (!error) {
+        tablesFound.push(tbl);
+      } else if (isTableNotFoundError(error)) {
+        missingTables.push(tbl);
+      } else {
+        // Table exists but might have an RLS policy restriction
+        tablesFound.push(tbl);
+      }
+    }
+
+    if (missingTables.length === requiredTables.length) {
+      return {
+        success: true,
+        message: `Koneksi ke Supabase BERHASIL (${latencyMs}ms), tetapi tabel database belum dibuat! Silakan salin skrip SQL kami dan jalankan di Supabase SQL Editor.`,
+        tablesFound: [],
+        missingTables: requiredTables,
+        latencyMs
+      };
+    }
 
     if (missingTables.length > 0) {
       return {
         success: true,
-        message: `Terhubung ke Supabase (${latencyMs}ms), namun beberapa tabel belum ada (${missingTables.join(', ')}). Jalankan skrip SQL untuk melengkapinya.`,
+        message: `Terhubung ke Supabase (${latencyMs}ms), namun beberapa tabel belum dibuat (${missingTables.join(', ')}). Silakan jalankan skrip SQL di Supabase SQL Editor untuk melengkapinya.`,
         tablesFound,
         missingTables,
         latencyMs
@@ -244,7 +295,7 @@ export async function testSupabaseConnection(customUrl?: string, customKey?: str
 
     return {
       success: true,
-      message: `Koneksi ke database Supabase BERHASIL dan semua tabel aktif! (${latencyMs}ms)`,
+      message: `Koneksi ke database Supabase BERHASIL dan seluruh 6 tabel aktif! (${latencyMs}ms)`,
       tablesFound,
       missingTables: [],
       latencyMs
@@ -330,6 +381,22 @@ export function isValidUUID(id?: string | null): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id.trim());
 }
 
+/**
+ * Helper to generate a valid RFC4122 v4 UUID.
+ * Required when inserting into PostgreSQL tables that do not have DEFAULT gen_random_uuid() configured,
+ * preventing error 23502 (null value in column "id" violates not-null constraint).
+ */
+export function generateUUID(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+
 // ==============================================================================
 // 1. USERS & AUTHENTICATION (public.users)
 // SCHEMA AKTUAL: id, nama, username, password, jabatan, unit, is_active, created_at
@@ -343,25 +410,35 @@ export async function fetchUsersFromDB(): Promise<UserAccount[] | null> {
   try {
     const { data, error } = await supabase
       .from('users')
-      .select('id, nama, username, password, jabatan, unit, is_active, created_at')
+      .select('*')
       .order('created_at', { ascending: true });
 
-    if (error || !data) {
-      logAuthDebug('Fetch users from Supabase error/notice:', error?.message);
+    if (error) {
+      if (isTableNotFoundError(error)) {
+        logAuthDebug('Supabase notice: tabel public.users belum tersedia di Supabase. Menggunakan data lokal/cache.');
+        return null;
+      }
+      logAuthDebug('Fetch users from Supabase notice:', error?.message);
+      return null;
+    }
+
+    if (!data || data.length === 0) {
       return null;
     }
 
     return data.map((row: any) => {
-      const role = mapJabatanToRole(row.jabatan);
+      const role = mapJabatanToRole(row.role || row.jabatan);
       const unit = mapUnit(row.unit, role);
       return {
         id: String(row.id),
         nama: String(row.nama || ''),
         username: String(row.username || ''),
-        password_hash: row.password || '',
+        password_hash: row.password_hash || row.password || '',
         role,
         unit,
         is_active: row.is_active !== false,
+        email: row.email || undefined,
+        title: row.title || undefined,
         created_at: row.created_at
       };
     });
@@ -393,19 +470,26 @@ export async function authenticateUser(
     try {
       const { data: dbUser, error: queryError } = await supabase
         .from('users')
-        .select('id, nama, username, password, jabatan, unit, is_active, created_at')
+        .select('*')
         .ilike('username', cleanUsername)
         .maybeSingle();
 
-      if (!queryError && dbUser) {
-        logAuthDebug('User record found in public.users:', { id: dbUser.id, username: dbUser.username, jabatan: dbUser.jabatan });
+      if (queryError) {
+        if (isTableNotFoundError(queryError)) {
+          logAuthDebug('Supabase notice: tabel public.users belum tersedia. Menggunakan login lokal.');
+        } else {
+          logAuthDebug('Supabase auth query notice:', queryError.message);
+        }
+      } else if (dbUser) {
+        logAuthDebug('User record found in public.users:', { id: dbUser.id, username: dbUser.username });
         if (dbUser.is_active === false) {
           return { success: false, message: 'Akun tidak aktif. Hubungi administrator yayasan.' };
         }
 
-        const isValid = await verifyPassword(passwordInput, dbUser.password);
+        const storedPassword = dbUser.password_hash || dbUser.password || '';
+        const isValid = await verifyPassword(passwordInput, storedPassword);
         if (isValid) {
-          const role = mapJabatanToRole(dbUser.jabatan);
+          const role = mapJabatanToRole(dbUser.role || dbUser.jabatan);
           const unit = mapUnit(dbUser.unit, role);
           return {
             success: true,
@@ -415,7 +499,9 @@ export async function authenticateUser(
               username: dbUser.username,
               role,
               unit,
-              is_active: Boolean(dbUser.is_active)
+              is_active: Boolean(dbUser.is_active),
+              email: dbUser.email || undefined,
+              title: dbUser.title || undefined
             }
           };
         } else {
@@ -466,6 +552,7 @@ export async function authenticateUser(
 
 export async function insertUserToDB(
   userItem: {
+    id?: string;
     nama: string;
     username: string;
     password_hash: string;
@@ -497,19 +584,20 @@ export async function insertUserToDB(
   }
 
   try {
-    const payload = {
-      nama: userItem.nama,
+    const payload: any = {
+      id: isValidUUID(userItem.id) ? userItem.id : generateUUID(),
+      nama: userItem.nama.trim(),
       username: userItem.username.toLowerCase().trim(),
       password: userItem.password_hash,
-      jabatan: userItem.role,
-      unit: userItem.unit,
+      jabatan: normalizeJabatanForDB(userItem.role),
+      unit: normalizeUnitForDB(userItem.unit),
       is_active: userItem.is_active !== false
     };
 
     const { data, error } = await supabase
       .from('users')
       .insert([payload])
-      .select('id, nama, username, password, jabatan, unit, is_active, created_at')
+      .select('id, nama, username, jabatan, unit, is_active, created_at')
       .single();
 
     if (error) {
@@ -517,16 +605,19 @@ export async function insertUserToDB(
       return { success: false, error: translateSupabaseError(error) };
     }
 
+    const mappedRole = mapJabatanToRole(data.jabatan || userItem.role);
+    const mappedUnit = mapUnit(data.unit || userItem.unit, mappedRole);
+
     return {
       success: true,
       data: {
         id: String(data.id),
         nama: data.nama,
         username: data.username,
-        role: (data.jabatan || userItem.role) as UserRole,
-        unit: (data.unit || userItem.unit) as 'ALL' | UnitPesantren,
+        role: mappedRole,
+        unit: mappedUnit,
         is_active: Boolean(data.is_active),
-        password_hash: data.password || userItem.password_hash,
+        password_hash: userItem.password_hash,
         created_at: data.created_at
       }
     };
@@ -628,8 +719,8 @@ export async function importUsersBatchToDB(
       .from('users')
       .select('username');
 
-    if (checkError) {
-      console.error('[IMPORT USERS] Check existing users error:', checkError);
+    if (checkError && !isTableNotFoundError(checkError)) {
+      console.warn('[IMPORT USERS] Check existing users notice:', checkError.message);
     }
 
     const existingUsernameSet = new Set<string>(
@@ -637,15 +728,7 @@ export async function importUsersBatchToDB(
     );
     const seenInBatch = new Set<string>();
 
-    const rowsToInsert: Array<{
-      id?: string;
-      nama: string;
-      username: string;
-      password: string;
-      jabatan: string;
-      unit: string;
-      is_active: boolean;
-    }> = [];
+    const rowsToInsert: any[] = [];
 
     for (let i = 0; i < userItems.length; i++) {
       const item = userItems[i];
@@ -674,17 +757,14 @@ export async function importUsersBatchToDB(
       const hashedPassword = await hashPassword(rawPwd);
 
       const dbPayload: any = {
+        id: isValidUUID(item.id) ? item.id!.trim() : generateUUID(),
         nama: item.nama.trim(),
         username: cleanUsername,
         password: hashedPassword,
-        jabatan: jabatanToSave,
-        unit: unit,
+        jabatan: normalizeJabatanForDB(role) || jabatanToSave,
+        unit: normalizeUnitForDB(unit),
         is_active: item.is_active !== false
       };
-
-      if (isValidUUID(item.id)) {
-        dbPayload.id = item.id!.trim();
-      }
 
       rowsToInsert.push(dbPayload);
     }
@@ -707,10 +787,10 @@ export async function importUsersBatchToDB(
     const { data: insertedData, error: insertError } = await supabase
       .from('users')
       .insert(rowsToInsert)
-      .select('id, nama, username, jabatan, unit, is_active, created_at');
+      .select('*');
 
     if (insertError) {
-      console.error('[IMPORT USERS]', insertError);
+      console.warn('[IMPORT USERS] Batch notice, trying fallback:', insertError.message);
 
       // If batch fails (e.g. partial duplicate or schema issue), attempt row-by-row fallback
       let fallbackSuccessCount = 0;
@@ -795,7 +875,7 @@ export async function updateUserInDB(
     const normalizedJabatan = normalizeJabatanForDB(userItem.role);
     const normalizedUnit = normalizeUnitForDB(userItem.unit);
 
-    const updatePayload = {
+    const updatePayload: any = {
       nama: userItem.nama.trim(),
       username: userItem.username.toLowerCase().trim(),
       jabatan: normalizedJabatan,
@@ -807,7 +887,7 @@ export async function updateUserInDB(
       .from('users')
       .update(updatePayload)
       .eq('id', userId)
-      .select('id, nama, username, password, jabatan, unit, is_active, created_at');
+      .select('*');
 
     if (error) {
       console.error('[UPDATE USER ERROR]', error);
@@ -816,7 +896,7 @@ export async function updateUserInDB(
 
     if (data && data.length > 0) {
       const row = data[0];
-      const mappedRole = mapJabatanToRole(row.jabatan);
+      const mappedRole = mapJabatanToRole(row.role || row.jabatan);
       const mappedUnit = mapUnit(row.unit, mappedRole);
       return {
         success: true,
@@ -824,7 +904,7 @@ export async function updateUserInDB(
           id: row.id,
           nama: row.nama,
           username: row.username,
-          password_hash: row.password,
+          password_hash: row.password_hash || row.password,
           role: mappedRole,
           unit: mappedUnit,
           is_active: row.is_active !== false,
@@ -898,12 +978,29 @@ export async function resetUserPasswordInDB(
   if (!isSupabaseConfigured()) return { success: true };
 
   try {
+    // Attempt updating both password and password_hash
     const { error } = await supabase
       .from('users')
-      .update({ password: newPasswordHash })
+      .update({ 
+        password_hash: newPasswordHash,
+        password: newPasswordHash 
+      })
       .eq('id', userId);
 
-    if (error) return { success: false, error: translateSupabaseError(error) };
+    if (error) {
+      // If one of the columns doesn't exist, try updating password_hash only
+      const { error: err2 } = await supabase
+        .from('users')
+        .update({ password_hash: newPasswordHash })
+        .eq('id', userId);
+      if (err2) {
+        const { error: err3 } = await supabase
+          .from('users')
+          .update({ password: newPasswordHash })
+          .eq('id', userId);
+        if (err3) return { success: false, error: translateSupabaseError(err3) };
+      }
+    }
     return { success: true };
   } catch (err: any) {
     return { success: false, error: translateSupabaseError(err) };
@@ -991,6 +1088,7 @@ export async function insertSantriToDB(
 
   try {
     const payload = {
+      id: generateUUID(),
       kode_santri: santriData.nis.trim(),
       nama: santriData.nama.trim().toUpperCase(),
       kelas: santriData.kelas.trim(),
@@ -1125,6 +1223,7 @@ export async function importSantriBatchToDB(
 
   try {
     const payload = santriDataList.map((item) => ({
+      id: generateUUID(),
       kode_santri: item.nis.trim(),
       nama: item.nama.trim().toUpperCase(),
       kelas: item.kelas.trim(),
@@ -1141,22 +1240,19 @@ export async function importSantriBatchToDB(
       const chunk = payload.slice(i, i + chunkSize);
       const { data, error } = await supabase
         .from('santri')
-        .upsert(chunk, { onConflict: 'kode_santri' })
+        .insert(chunk)
         .select('id, kode_santri, nama, kelas, unit, musyrif, asrama, status_pembinaan, created_at');
 
       if (error) {
-        console.error('[IMPORT SANTRI CHUNK ERROR]', error);
-        const { data: insertData, error: insertError } = await supabase
-          .from('santri')
-          .insert(chunk)
-          .select('id, kode_santri, nama, kelas, unit, musyrif, asrama, status_pembinaan, created_at');
+        console.warn('[IMPORT SANTRI CHUNK WARNING, trying row-by-row]', error.message);
+        for (const singleRow of chunk) {
+          const { data: rowData, error: rowError } = await supabase
+            .from('santri')
+            .insert([singleRow])
+            .select('id, kode_santri, nama, kelas, unit, musyrif, asrama, status_pembinaan, created_at');
 
-        if (insertError) {
-          console.error('[IMPORT SANTRI FALLBACK INSERT ERROR]', insertError);
-          return { success: false, insertedCount: insertedRecords.length, error: translateSupabaseError(insertError) };
-        }
-        if (insertData) {
-          insertData.forEach((row: any) => {
+          if (!rowError && rowData && rowData.length > 0) {
+            const row = rowData[0];
             insertedRecords.push({
               id: String(row.id),
               nis: String(row.kode_santri || ''),
@@ -1168,7 +1264,7 @@ export async function importSantriBatchToDB(
               musyrifNama: row.musyrif || undefined,
               asrama: row.asrama || undefined
             });
-          });
+          }
         }
       } else if (data) {
         data.forEach((row: any) => {
@@ -1352,6 +1448,7 @@ export async function insertMasterPelanggaranToDB(
 
   try {
     const payload = {
+      id: generateUUID(),
       kode: item.kode || `P${Math.floor(100 + Math.random() * 900)}`,
       nama: item.jenis,
       poin: item.poin,
@@ -1506,6 +1603,7 @@ export async function importMasterPelanggaranBatchToDB(
 
   try {
     const payload = items.map((it) => ({
+      id: generateUUID(),
       kode: it.kode,
       nama: it.jenis,
       poin: it.poin,
@@ -1679,6 +1777,7 @@ export async function insertPelanggaranToDB(
 
   try {
     const payload: any = {
+      id: generateUUID(),
       santri_id: data.santriId,
       pelanggaran_id: isValidUUID(data.jenisPelanggaranId) ? data.jenisPelanggaranId : null,
       tanggal_waktu: now.toISOString(),
@@ -1941,6 +2040,7 @@ export async function insertPembinaanRecordToDB(
 
   try {
     const payload = {
+      id: generateUUID(),
       santri_id: record.santriId,
       santri_nama: record.santriNama,
       santri_kelas: record.santriKelas,

@@ -22,7 +22,8 @@ import {
   Trash2,
   UserCheck,
   UserX,
-  Lock
+  Lock,
+  RotateCcw
 } from 'lucide-react';
 
 export const ManajemenUserView: React.FC = () => {
@@ -91,6 +92,13 @@ export const ManajemenUserView: React.FC = () => {
       return matchesSearch && matchesRole && matchesUnit && matchesStatus;
     });
   }, [usersList, searchTerm, filterRole, filterUnit, filterStatus]);
+
+  const handleResetFilter = () => {
+    setSearchTerm('');
+    setFilterRole('ALL');
+    setFilterUnit('ALL');
+    setFilterStatus('ALL');
+  };
 
   const handleDeleteUser = (u: UserAccount) => {
     if (!isKasie) {
@@ -262,6 +270,20 @@ export const ManajemenUserView: React.FC = () => {
             </select>
           </div>
         </div>
+
+        {(searchTerm !== '' || filterRole !== 'ALL' || filterUnit !== 'ALL' || filterStatus !== 'ALL') && (
+          <div className="flex items-center justify-end pt-1">
+            <button
+              id="btn-reset-filter-user"
+              onClick={handleResetFilter}
+              className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold bg-rose-50 dark:bg-rose-950/30 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800 hover:bg-rose-100 transition-all cursor-pointer"
+              title="Kembalikan semua filter ke kondisi awal"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>Reset Filter</span>
+            </button>
+          </div>
+        )}
 
         {/* Table Container */}
         <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800">

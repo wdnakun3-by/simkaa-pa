@@ -13,7 +13,8 @@ import {
   AlertTriangle,
   ChevronRight,
   BookOpen,
-  ArrowRight
+  ArrowRight,
+  RotateCcw
 } from 'lucide-react';
 import { Santri } from '../../types';
 
@@ -61,6 +62,12 @@ export const DataPembinaanView: React.FC = () => {
       return matchSearch && matchUnit && matchStatus;
     }).sort((a, b) => b.totalPoin - a.totalPoin);
   }, [santriList, searchQuery, selectedUnit, selectedStatusFilter]);
+
+  const handleResetFilter = () => {
+    setSearchQuery('');
+    setSelectedUnit('ALL');
+    setSelectedStatusFilter('ALL');
+  };
 
   const handleOpenAddModal = (s: Santri) => {
     setTargetSantri(s);
@@ -206,6 +213,18 @@ export const DataPembinaanView: React.FC = () => {
               <option value="SP">Mendapat SP (1/2/3)</option>
               <option value="BERSIH">Poin Nol (Bersih)</option>
             </select>
+
+            {(searchQuery !== '' || selectedUnit !== 'ALL' || selectedStatusFilter !== 'ALL') && (
+              <button
+                id="btn-reset-filter-pembinaan"
+                onClick={handleResetFilter}
+                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-rose-50 dark:bg-rose-950/30 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800 hover:bg-rose-100 transition-all cursor-pointer whitespace-nowrap"
+                title="Kembalikan semua filter ke kondisi awal"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>Reset Filter</span>
+              </button>
+            )}
           </div>
         </div>
 

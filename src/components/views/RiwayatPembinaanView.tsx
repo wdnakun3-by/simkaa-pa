@@ -13,7 +13,8 @@ import {
   Building2,
   Calendar,
   User,
-  Plus
+  Plus,
+  RotateCcw
 } from 'lucide-react';
 import { PembinaanRecord } from '../../types';
 import { FormPembinaanA4 } from '../common/FormPembinaanA4';
@@ -60,6 +61,12 @@ export const RiwayatPembinaanView: React.FC = () => {
       return matchSearch && matchStatus && matchUnit;
     });
   }, [pembinaanList, searchQuery, selectedStatusFilter, selectedUnitFilter]);
+
+  const handleResetFilter = () => {
+    setSearchQuery('');
+    setSelectedStatusFilter('ALL');
+    setSelectedUnitFilter('ALL');
+  };
 
   const handleOpenEdit = (p: PembinaanRecord) => {
     setEditingRecord(p);
@@ -147,6 +154,18 @@ export const RiwayatPembinaanView: React.FC = () => {
               <option value="PROSES">Sedang Proses</option>
               <option value="SELESAI">Selesai (Tuntas)</option>
             </select>
+
+            {(searchQuery !== '' || selectedStatusFilter !== 'ALL' || selectedUnitFilter !== 'ALL') && (
+              <button
+                id="btn-reset-filter-riwayat"
+                onClick={handleResetFilter}
+                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-rose-50 dark:bg-rose-950/30 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800 hover:bg-rose-100 transition-all cursor-pointer whitespace-nowrap"
+                title="Kembalikan semua filter ke kondisi awal"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>Reset Filter</span>
+              </button>
+            )}
           </div>
         </div>
 
