@@ -1,0 +1,8 @@
+{
+  "name": "SIMKA-PA NEW",
+  "description": "Dashboard administrasi pembinaan akhlak dan karakter santri modern untuk Koordinator dan Kasie Pembinaan Pesantren.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
