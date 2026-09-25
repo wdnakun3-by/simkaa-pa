@@ -40,6 +40,9 @@ export const Header: React.FC<HeaderProps> = ({ onOpenSidebar }) => {
           <span className="font-extrabold text-white text-base tracking-wider">
             SIMKA<span className="text-emerald-400">.ID</span>
           </span>
+          <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/25 tracking-wider">
+            Pro V1
+          </span>
         </div>
       </div>
 

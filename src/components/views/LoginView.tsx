@@ -51,9 +51,14 @@ export const LoginView: React.FC = () => {
           </div>
 
           {/* SIMKA.ID TITLE */}
-          <h1 className="text-[26px] sm:text-[32px] font-black tracking-tight text-white leading-tight">
-            SIMKA<span className="text-[#00B686]">.ID</span>
-          </h1>
+          <div className="flex items-center justify-center gap-2.5">
+            <h1 className="text-[26px] sm:text-[32px] font-black tracking-tight text-white leading-tight">
+              SIMKA<span className="text-[#00B686]">.ID</span>
+            </h1>
+            <span className="px-2 py-0.5 rounded-md text-[11px] font-bold bg-[#00B686]/15 text-[#00B686] border border-[#00B686]/30 tracking-wider">
+              Pro V1
+            </span>
+          </div>
 
           {/* TAGLINE */}
           <p className="text-[13px] sm:text-[14.5px] font-semibold text-emerald-300/90 mt-1 max-w-xs sm:max-w-md leading-relaxed tracking-wide">
@@ -190,7 +195,7 @@ export const LoginView: React.FC = () => {
                 <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
               ) : (
                 <>
-                  <span>Masuk ke SIMKA.ID</span>
+                  <span>Masuk ke SIMKA.ID Pro V1</span>
                   <ArrowRight className="w-4 h-4" />
                 </>
               )}
